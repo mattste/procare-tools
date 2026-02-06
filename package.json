@@ -1,0 +1,17 @@
+{
+  "name": "procare-tools",
+  "version": "0.1.0",
+  "description": "Tools for querying childcare activity data from Procare",
+  "type": "module",
+  "scripts": {
+    "build": "bun build ./src/index.ts --outdir ./dist",
+    "test": "bun test",
+    "test:unit": "bun test --filter unit",
+    "test:integration": "bun test --filter integration",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.2.0",
+    "typescript": "^5.7.0"
+  }
+}
