@@ -1,0 +1,9 @@
+{
+  "name": "procare-tools",
+  "description": "Tools for querying childcare activity data from Procare — diaper changes, meals, naps, check-in/out times, and more.",
+  "version": "0.1.0",
+  "author": {
+    "name": "mattste"
+  },
+  "keywords": ["procare", "childcare", "daycare", "parenting"]
+}
