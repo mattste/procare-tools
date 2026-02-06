@@ -1,0 +1,1723 @@
+diff --git a/.claude-plugin/plugin.json b/.claude-plugin/plugin.json
+new file mode 100644
+index 0000000..adb6715
+--- /dev/null
++++ b/.claude-plugin/plugin.json
+@@ -0,0 +1,9 @@
++{
++  "name": "procare-tools",
++  "description": "Tools for querying childcare activity data from Procare — diaper changes, meals, naps, check-in/out times, and more.",
++  "version": "0.1.0",
++  "author": {
++    "name": "mattste"
++  },
++  "keywords": ["procare", "childcare", "daycare", "parenting"]
++}
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000..2837e5b
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,5 @@
++node_modules/
++dist/
++*.db
++*.sqlite
++.env
+diff --git a/CLAUDE.md b/CLAUDE.md
+new file mode 100644
+index 0000000..32ae832
+--- /dev/null
++++ b/CLAUDE.md
+@@ -0,0 +1,75 @@
++# Procare Tools
++
++A Claude Code plugin for querying childcare activity data from Procare.
++
++## Project structure
++
++```
++procare-tools/
++├── .claude-plugin/
++│   └── plugin.json                          # Plugin manifest
++├── src/
++│   ├── index.ts                             # Public API re-exports
++│   ├── types.ts                             # TypeScript types (Child, Activity, etc.)
++│   ├── db/
++│   │   ├── connection.ts                    # SQLite connection factory
++│   │   └── schema.ts                        # Schema migrations
++│   ├── provider/
++│   │   ├── interface.ts                     # Abstract DataProvider interface
++│   │   ├── sqlite.ts                        # SQLite-backed implementation
++│   │   ├── index.ts                         # Re-exports
++│   │   └── sqlite.unit.test.ts              # Unit tests
++│   └── test/
++│       ├── fixtures/
++│       │   └── sample-data.ts               # Realistic test data (Emma, Liam)
++│       ├── helpers/
++│       │   └── test-db.ts                   # In-memory test DB factory
++│       └── daily-reports.integration.test.ts # Integration tests
++├── skills/
++│   ├── procare-query/
++│   │   └── SKILL.md                         # Main query skill
++│   └── procare-data-provider/
++│       └── SKILL.md                         # Data access layer skill
++├── agents/
++│   └── procare-assistant.md                 # Subagent for childcare queries
++├── docs/
++│   └── data-model.md                        # Data model reference
++└── CLAUDE.md                                # This file
++```
++
++## Development
++
++```bash
++bun install          # Install dependencies
++bun test             # Run all tests
++bun test --filter unit         # Unit tests only
++bun test --filter integration  # Integration tests only
++bun run typecheck    # TypeScript type checking
++```
++
++## Architecture
++
++- **`DataProvider` interface** (`src/provider/interface.ts`): Abstract contract for data access. Any backing store (SQLite, API, email parser) implements this.
++- **`SqliteDataProvider`** (`src/provider/sqlite.ts`): SQLite-backed implementation using `bun:sqlite`. Stores children and activities with JSON-serialized details.
++- **Schema management** (`src/db/schema.ts`): Versioned migrations applied automatically on connection open.
++- **Test harness** (`src/test/`): In-memory SQLite via `createTestProvider()`, realistic fixtures for two children with full-day activity data.
++
++## Key design decisions
++
++- **Bun runtime**: Uses `bun:sqlite` (built-in) and `bun:test` — no external dependencies for SQLite or testing
++- **Plugin, not standalone**: Built as a plugin so it can be shared and installed across projects
++- **Skill-based architecture**: `procare-query` handles user questions, `procare-data-provider` abstracts the data source
++- **Agent delegation**: The `procare-assistant` agent is a lightweight haiku-powered agent that handles the full query flow
++- **Data source agnostic**: The `DataProvider` interface is independent of the backing store — swap SQLite for an API client without changing query logic
++
++## Current status
++
++**SQLite data layer implemented with full test coverage. Not yet connected to live Procare data.**
++
++## Next steps
++
++1. Investigate Procare API availability (parent-facing endpoints, auth)
++2. Get a sample Procare daily report email and analyze the format
++3. Implement an ingestion pipeline (API poller or email parser) that writes to SQLite via the DataProvider
++4. Wire the procare-query skill to call the DataProvider at query time
++5. Test end-to-end with real data
+diff --git a/agents/procare-assistant.md b/agents/procare-assistant.md
+new file mode 100644
+index 0000000..ddfd1f5
+--- /dev/null
++++ b/agents/procare-assistant.md
+@@ -0,0 +1,51 @@
++---
++name: procare-assistant
++description: Childcare activity assistant that answers parent questions about their child's day at daycare using Procare data. Use when the user asks about diaper changes, meals, naps, check-in/out times, or wants a daily summary. Use proactively for any childcare-related query.
++model: haiku
++tools: Read, Grep, Glob, Bash, WebFetch
++skills:
++  - procare-query
++  - procare-data-provider
++---
++
++You are a helpful childcare assistant for parents who use Procare at their child's daycare.
++
++## Your role
++
++Parents will ask you natural-language questions about their child's activities at daycare. Your job is to:
++
++1. Understand what they're asking about (diaper, meal, nap, etc.)
++2. Retrieve the relevant data from the Procare data source
++3. Present the answer in a warm, clear, parent-friendly way
++
++## Personality
++
++- Friendly and reassuring — parents worry, and you help them feel informed
++- Concise — busy parents want quick answers
++- Proactive — if you notice something worth mentioning (e.g., a short nap, skipped meal), mention it gently
++
++## Example interactions
++
++**Parent**: "When did my child's diaper last get changed?"
++**You**: "Emma's last diaper change was at 2:15 PM today. It was a wet diaper, changed by Ms. Johnson."
++
++**Parent**: "When did they last eat?"
++**You**: "Emma had her afternoon snack at 3:00 PM — crackers and fruit. She ate most of it."
++
++**Parent**: "How was her day?"
++**You**: "Here's Emma's day so far:
++- Checked in at 8:05 AM
++- Breakfast at 8:30 AM (oatmeal and fruit — ate all of it)
++- Morning nap from 10:00-11:15 AM (1 hr 15 min)
++- Lunch at 11:45 AM (chicken, rice, peas — ate most)
++- 3 diaper changes so far
++- Afternoon snack at 3:00 PM
++She's having a good day!"
++
++## Current status
++
++The data provider is not yet implemented. When asked a question, explain what data you would retrieve and how you would answer it. Let the parent know the plugin is being developed and will connect to real Procare data soon.
++
++## Data model
++
++Refer to the procare-data-provider skill for the data access interface and docs/data-model.md for the full type definitions.
+diff --git a/bun.lock b/bun.lock
+new file mode 100644
+index 0000000..8db9800
+--- /dev/null
++++ b/bun.lock
+@@ -0,0 +1,24 @@
++{
++  "lockfileVersion": 1,
++  "configVersion": 1,
++  "workspaces": {
++    "": {
++      "name": "procare-tools",
++      "devDependencies": {
++        "@types/bun": "^1.2.0",
++        "typescript": "^5.7.0",
++      },
++    },
++  },
++  "packages": {
++    "@types/bun": ["@types/bun@1.3.8", "", { "dependencies": { "bun-types": "1.3.8" } }, "sha512-3LvWJ2q5GerAXYxO2mffLTqOzEu5qnhEAlh48Vnu8WQfnmSwbgagjGZV6BoHKJztENYEDn6QmVd949W4uESRJA=="],
++
++    "@types/node": ["@types/node@25.2.1", "", { "dependencies": { "undici-types": "~7.16.0" } }, "sha512-CPrnr8voK8vC6eEtyRzvMpgp3VyVRhgclonE7qYi6P9sXwYb59ucfrnmFBTaP0yUi8Gk4yZg/LlTJULGxvTNsg=="],
++
++    "bun-types": ["bun-types@1.3.8", "", { "dependencies": { "@types/node": "*" } }, "sha512-fL99nxdOWvV4LqjmC+8Q9kW3M4QTtTR1eePs94v5ctGqU8OeceWrSUaRw3JYb7tU3FkMIAjkueehrHPPPGKi5Q=="],
++
++    "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
++
++    "undici-types": ["undici-types@7.16.0", "", {}, "sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw=="],
++  }
++}
+diff --git a/docs/data-model.md b/docs/data-model.md
+new file mode 100644
+index 0000000..19005b8
+--- /dev/null
++++ b/docs/data-model.md
+@@ -0,0 +1,128 @@
++# Procare Data Model
++
++This document defines the data interfaces for childcare activity records sourced from Procare. These interfaces are the contract between the data provider (API, email parser, etc.) and the query skill.
++
++## Core Types
++
++### Child
++
++Represents a child enrolled in a Procare-connected daycare.
++
++| Field       | Type     | Description                          |
++|-------------|----------|--------------------------------------|
++| id          | string   | Unique identifier for the child      |
++| firstName   | string   | Child's first name                   |
++| lastName    | string   | Child's last name                    |
++| classroom   | string   | Current classroom assignment         |
++| dateOfBirth | date     | Child's date of birth                |
++
++### ActivityType
++
++Enum of activity categories tracked by Procare.
++
++| Value          | Description                              |
++|----------------|------------------------------------------|
++| DIAPER         | Diaper change event                      |
++| MEAL           | Meal or snack                            |
++| NAP            | Sleep / nap period                       |
++| CHECK_IN       | Arrival at daycare                       |
++| CHECK_OUT      | Departure from daycare                   |
++| INCIDENT       | Incident or accident report              |
++| MEDICATION     | Medication administered                  |
++| PHOTO          | Photo shared by provider                 |
++| NOTE           | General note from provider               |
++| LEARNING       | Learning activity or milestone           |
++
++### Activity
++
++A single activity event recorded for a child.
++
++| Field       | Type         | Description                                    |
++|-------------|--------------|------------------------------------------------|
++| id          | string       | Unique identifier for the activity             |
++| childId     | string       | Reference to the child                         |
++| type        | ActivityType | Category of activity                           |
++| timestamp   | datetime     | When the activity occurred                     |
++| endTime     | datetime?    | End time (for duration-based activities like naps) |
++| details     | object       | Type-specific details (see below)              |
++| notes       | string?      | Free-text notes from the provider              |
++| reportedBy  | string?      | Name of the staff member who recorded it       |
++
++### Activity Detail Types
++
++#### DiaperDetails
++
++| Field     | Type   | Description                          |
++|-----------|--------|--------------------------------------|
++| condition | string | "wet", "dry", "bm", or "wet+bm"     |
++
++#### MealDetails
++
++| Field    | Type     | Description                                 |
++|----------|----------|---------------------------------------------|
++| mealType | string   | "breakfast", "lunch", "snack", or "dinner"  |
++| items    | string[] | Food items served                           |
++| amount   | string?  | How much was consumed: "all", "most", "some", "none" |
++
++#### NapDetails
++
++| Field    | Type     | Description                       |
++|----------|----------|-----------------------------------|
++| duration | number?  | Duration in minutes (if ended)    |
++
++#### IncidentDetails
++
++| Field       | Type   | Description              |
++|-------------|--------|--------------------------|
++| description | string | What happened            |
++| action      | string | Action taken by provider |
++
++#### MedicationDetails
++
++| Field      | Type   | Description          |
++|------------|--------|----------------------|
++| name       | string | Medication name      |
++| dosage     | string | Dosage administered  |
++| time       | string | Time administered    |
++
++### DailySummary
++
++Aggregated view of a child's day.
++
++| Field        | Type       | Description                              |
++|--------------|------------|------------------------------------------|
++| childId      | string     | Reference to the child                   |
++| date         | date       | The date summarized                      |
++| checkIn      | datetime?  | Morning check-in time                    |
++| checkOut     | datetime?  | Afternoon check-out time                 |
++| activities   | Activity[] | All activities for the day               |
++| diaperCount  | number     | Total diaper changes                     |
++| naps         | Activity[] | Nap activities with durations            |
++| meals        | Activity[] | Meals and snacks                         |
++| notes        | string[]   | All notes from providers                 |
++
++## Data Source Interface
++
++The data provider must implement the following query capabilities. The concrete implementation will depend on whether we use the Procare API, parse email reports, or another method.
++
++### Queries
++
++| Query                  | Parameters                  | Returns        | Description                              |
++|------------------------|-----------------------------|----------------|------------------------------------------|
++| getChildren            | (none)                      | Child[]        | List all enrolled children               |
++| getActivities          | childId, date?, type?       | Activity[]     | Get activities with optional filters     |
++| getLatestActivity      | childId, type               | Activity?      | Most recent activity of a given type     |
++| getDailySummary        | childId, date               | DailySummary   | Full day summary for a child             |
++| getActivitiesInRange   | childId, startDate, endDate, type? | Activity[] | Activities within a date range    |
++
++## Example Queries Mapped to Interface
++
++| Natural language query                        | Interface call                                      |
++|-----------------------------------------------|-----------------------------------------------------|
++| "When did my child's diaper last get changed?" | `getLatestActivity(childId, "DIAPER")`             |
++| "When did they last eat?"                      | `getLatestActivity(childId, "MEAL")`               |
++| "How many diapers today?"                      | `getActivities(childId, today, "DIAPER").length`   |
++| "What time did they check in?"                 | `getLatestActivity(childId, "CHECK_IN")`           |
++| "How long was their nap?"                      | `getLatestActivity(childId, "NAP").details.duration`|
++| "Give me a summary of today"                   | `getDailySummary(childId, today)`                  |
++| "What did they eat for lunch?"                 | `getActivities(childId, today, "MEAL")` filtered by mealType |
+diff --git a/package.json b/package.json
+new file mode 100644
+index 0000000..8057ef9
+--- /dev/null
++++ b/package.json
+@@ -0,0 +1,17 @@
++{
++  "name": "procare-tools",
++  "version": "0.1.0",
++  "description": "Tools for querying childcare activity data from Procare",
++  "type": "module",
++  "scripts": {
++    "build": "bun build ./src/index.ts --outdir ./dist",
++    "test": "bun test",
++    "test:unit": "bun test --filter unit",
++    "test:integration": "bun test --filter integration",
++    "typecheck": "tsc --noEmit"
++  },
++  "devDependencies": {
++    "@types/bun": "^1.2.0",
++    "typescript": "^5.7.0"
++  }
++}
+diff --git a/skills/procare-data-provider/SKILL.md b/skills/procare-data-provider/SKILL.md
+new file mode 100644
+index 0000000..3c1eb5c
+--- /dev/null
++++ b/skills/procare-data-provider/SKILL.md
+@@ -0,0 +1,69 @@
++---
++name: procare-data-provider
++description: Data access layer for Procare childcare records. Provides structured access to activity data. This skill defines the interface for fetching data — the concrete implementation will be added once the data source (API or email) is determined.
++user-invocable: false
++---
++
++# Procare Data Provider
++
++This skill defines how to retrieve childcare activity data from Procare. It is a dependency of the `procare-query` skill and is not intended to be invoked directly by users.
++
++## Data source options (to be implemented)
++
++### Option 1: Procare API
++
++Procare may expose a parent-facing API. If available, this provider would authenticate and query the API directly.
++
++**Needs investigation:**
++- Does Procare have a public or undocumented API?
++- What authentication method is used (OAuth, API key, session cookie)?
++- What endpoints are available for activity data?
++- Rate limits and data freshness
++
++### Option 2: Email report parsing
++
++Procare sends daily activity reports via email. This provider would:
++1. Connect to the parent's email (via IMAP or Gmail API)
++2. Find Procare report emails
++3. Parse the HTML email body into structured Activity records
++4. Cache parsed data locally
++
++**Needs investigation:**
++- What does the Procare email report format look like?
++- How consistent is the format across providers?
++- How frequently are reports sent?
++
++### Option 3: Procare web scraping
++
++As a fallback, the provider could authenticate to the Procare parent portal and scrape activity data.
++
++**Needs investigation:**
++- Portal URL and authentication flow
++- Page structure for activity data
++- Session management
++
++## Interface contract
++
++Regardless of the data source, the provider must support these queries:
++
++```
++getChildren() -> Child[]
++getActivities(childId, date?, type?) -> Activity[]
++getLatestActivity(childId, type) -> Activity?
++getDailySummary(childId, date) -> DailySummary
++getActivitiesInRange(childId, startDate, endDate, type?) -> Activity[]
++```
++
++See [data-model.md](../../docs/data-model.md) for full type definitions.
++
++## Configuration
++
++The provider will need configuration stored securely (not in the repo):
++
++| Setting       | Description                              |
++|---------------|------------------------------------------|
++| dataSource    | "api", "email", or "scrape"              |
++| credentials   | Auth credentials for the chosen source   |
++| childIds      | Mapping of child names to Procare IDs    |
++| cacheDir      | Local directory for caching parsed data  |
++| cacheTtl      | How long cached data remains valid       |
+diff --git a/skills/procare-query/SKILL.md b/skills/procare-query/SKILL.md
+new file mode 100644
+index 0000000..876e02f
+--- /dev/null
++++ b/skills/procare-query/SKILL.md
+@@ -0,0 +1,43 @@
++---
++name: procare-query
++description: Answer questions about a child's daycare activities from Procare data — diaper changes, meals, naps, check-in/out times, incidents, and more. Use when the user asks about their child's day, feeding schedule, diaper history, nap times, or any childcare-related query.
++---
++
++# Procare Query
++
++You help parents get answers about their child's daycare activities using data from Procare.
++
++## Supported query types
++
++- **Diaper changes**: When was the last change, how many today, what condition
++- **Meals**: What they ate, when they ate, how much they consumed
++- **Naps**: When they napped, how long, how many naps today
++- **Check-in/out**: What time they arrived or left
++- **Incidents**: Any reported incidents or accidents
++- **Medications**: What was administered and when
++- **Daily summary**: Full overview of the day's activities
++- **Notes & photos**: Messages and photos from providers
++
++## How to answer
++
++1. Identify which child the user is asking about. If ambiguous, ask for clarification.
++2. Determine the activity type and time range from the query.
++3. Look up the data using the procare data provider.
++4. Present the answer in a clear, parent-friendly way.
++
++## Response format
++
++- Use natural, conversational language (you're talking to a parent)
++- Include timestamps in a readable format (e.g., "2:30 PM" not "14:30:00")
++- For summaries, organize by time of day
++- Flag anything that might need attention (e.g., skipped meals, short naps)
++
++## Data model reference
++
++For the full data model and available query interfaces, see [data-model.md](../../docs/data-model.md).
++
++## Current status
++
++**Data source: NOT YET CONNECTED**
++
++This plugin is scaffolded but not yet connected to a live data source. When a user asks a query, inform them that the data provider is not yet implemented and explain what information you *would* return once connected. Mention that the plan is to connect via the Procare API or by parsing Procare email reports.
+diff --git a/src/db/connection.ts b/src/db/connection.ts
+new file mode 100644
+index 0000000..6b75116
+--- /dev/null
++++ b/src/db/connection.ts
+@@ -0,0 +1,23 @@
++import { Database } from "bun:sqlite";
++import { initializeSchema } from "./schema.js";
++
++export interface ConnectionOptions {
++  /** Path to SQLite file, or ":memory:" for in-memory DB. */
++  path: string;
++  /** Enable WAL mode for better concurrent read performance. Default: true. */
++  wal?: boolean;
++}
++
++/**
++ * Open a SQLite database connection and initialize the schema.
++ * For tests, use ":memory:" as the path.
++ */
++export function openDatabase(options: ConnectionOptions): Database {
++  const db = new Database(options.path);
++  if (options.wal !== false) {
++    db.exec("PRAGMA journal_mode=WAL");
++  }
++  db.exec("PRAGMA foreign_keys=ON");
++  initializeSchema(db);
++  return db;
++}
+diff --git a/src/db/schema.ts b/src/db/schema.ts
+new file mode 100644
+index 0000000..6a1531a
+--- /dev/null
++++ b/src/db/schema.ts
+@@ -0,0 +1,66 @@
++import { Database } from "bun:sqlite";
++
++const SCHEMA_VERSION = 1;
++
++const MIGRATIONS: string[] = [
++  // v1: initial schema
++  `
++  CREATE TABLE IF NOT EXISTS children (
++    id TEXT PRIMARY KEY,
++    first_name TEXT NOT NULL,
++    last_name TEXT NOT NULL,
++    classroom TEXT NOT NULL,
++    date_of_birth TEXT NOT NULL
++  );
++
++  CREATE TABLE IF NOT EXISTS activities (
++    id TEXT PRIMARY KEY,
++    child_id TEXT NOT NULL,
++    type TEXT NOT NULL,
++    timestamp TEXT NOT NULL,
++    end_time TEXT,
++    details TEXT NOT NULL DEFAULT '{}',
++    notes TEXT,
++    reported_by TEXT,
++    FOREIGN KEY (child_id) REFERENCES children(id)
++  );
++
++  CREATE INDEX IF NOT EXISTS idx_activities_child_id ON activities(child_id);
++  CREATE INDEX IF NOT EXISTS idx_activities_type ON activities(type);
++  CREATE INDEX IF NOT EXISTS idx_activities_timestamp ON activities(timestamp);
++  CREATE INDEX IF NOT EXISTS idx_activities_child_type_ts ON activities(child_id, type, timestamp);
++
++  CREATE TABLE IF NOT EXISTS schema_version (
++    version INTEGER PRIMARY KEY
++  );
++  `,
++];
++
++export function initializeSchema(db: Database): void {
++  const currentVersion = getSchemaVersion(db);
++  if (currentVersion >= SCHEMA_VERSION) return;
++
++  db.exec("BEGIN");
++  try {
++    for (let i = currentVersion; i < SCHEMA_VERSION; i++) {
++      db.exec(MIGRATIONS[i]);
++    }
++    db.exec(`DELETE FROM schema_version`);
++    db.exec(`INSERT INTO schema_version (version) VALUES (${SCHEMA_VERSION})`);
++    db.exec("COMMIT");
++  } catch (err) {
++    db.exec("ROLLBACK");
++    throw err;
++  }
++}
++
++function getSchemaVersion(db: Database): number {
++  try {
++    const row = db
++      .query("SELECT version FROM schema_version LIMIT 1")
++      .get() as { version: number } | null;
++    return row?.version ?? 0;
++  } catch {
++    return 0;
++  }
++}
+diff --git a/src/index.ts b/src/index.ts
+new file mode 100644
+index 0000000..18d787e
+--- /dev/null
++++ b/src/index.ts
+@@ -0,0 +1,4 @@
++export * from "./types.js";
++export * from "./provider/index.js";
++export { openDatabase } from "./db/connection.js";
++export type { ConnectionOptions } from "./db/connection.js";
+diff --git a/src/provider/index.ts b/src/provider/index.ts
+new file mode 100644
+index 0000000..1473767
+--- /dev/null
++++ b/src/provider/index.ts
+@@ -0,0 +1,2 @@
++export { SqliteDataProvider } from "./sqlite.js";
++export type { DataProvider } from "./interface.js";
+diff --git a/src/provider/interface.ts b/src/provider/interface.ts
+new file mode 100644
+index 0000000..731be2e
+--- /dev/null
++++ b/src/provider/interface.ts
+@@ -0,0 +1,57 @@
++import type { Activity, ActivityType, Child, DailySummary } from "../types.js";
++
++/**
++ * Abstract interface for accessing Procare childcare data.
++ * Implementations may back this with SQLite, an API, email parsing, etc.
++ */
++export interface DataProvider {
++  /** List all enrolled children. */
++  getChildren(): Promise<Child[]>;
++
++  /** Get a single child by ID. */
++  getChild(childId: string): Promise<Child | null>;
++
++  /**
++   * Get activities for a child, optionally filtered by date and/or type.
++   * Results are ordered by timestamp descending (most recent first).
++   */
++  getActivities(
++    childId: string,
++    date?: string,
++    type?: ActivityType,
++  ): Promise<Activity[]>;
++
++  /** Get the most recent activity of a given type for a child. */
++  getLatestActivity(
++    childId: string,
++    type: ActivityType,
++  ): Promise<Activity | null>;
++
++  /** Get a full daily summary for a child on a given date. */
++  getDailySummary(childId: string, date: string): Promise<DailySummary>;
++
++  /**
++   * Get activities within a date range, optionally filtered by type.
++   * Results are ordered by timestamp descending.
++   */
++  getActivitiesInRange(
++    childId: string,
++    startDate: string,
++    endDate: string,
++    type?: ActivityType,
++  ): Promise<Activity[]>;
++
++  // --- Write operations (for ingesting data) ---
++
++  /** Add or update a child record. */
++  upsertChild(child: Child): Promise<void>;
++
++  /** Add a new activity record. */
++  addActivity(activity: Activity): Promise<void>;
++
++  /** Add multiple activity records in a batch. */
++  addActivities(activities: Activity[]): Promise<void>;
++
++  /** Close the provider and release resources. */
++  close(): void;
++}
+diff --git a/src/provider/sqlite.ts b/src/provider/sqlite.ts
+new file mode 100644
+index 0000000..215a650
+--- /dev/null
++++ b/src/provider/sqlite.ts
+@@ -0,0 +1,223 @@
++import { Database } from "bun:sqlite";
++import type {
++  Activity,
++  ActivityDetails,
++  ActivityType,
++  Child,
++  DailySummary,
++} from "../types.js";
++import type { DataProvider } from "./interface.js";
++
++interface ActivityRow {
++  id: string;
++  child_id: string;
++  type: string;
++  timestamp: string;
++  end_time: string | null;
++  details: string;
++  notes: string | null;
++  reported_by: string | null;
++}
++
++interface ChildRow {
++  id: string;
++  first_name: string;
++  last_name: string;
++  classroom: string;
++  date_of_birth: string;
++}
++
++function rowToActivity(row: ActivityRow): Activity {
++  return {
++    id: row.id,
++    childId: row.child_id,
++    type: row.type as ActivityType,
++    timestamp: row.timestamp,
++    endTime: row.end_time ?? undefined,
++    details: JSON.parse(row.details) as ActivityDetails,
++    notes: row.notes ?? undefined,
++    reportedBy: row.reported_by ?? undefined,
++  };
++}
++
++function rowToChild(row: ChildRow): Child {
++  return {
++    id: row.id,
++    firstName: row.first_name,
++    lastName: row.last_name,
++    classroom: row.classroom,
++    dateOfBirth: row.date_of_birth,
++  };
++}
++
++export class SqliteDataProvider implements DataProvider {
++  constructor(private db: Database) {}
++
++  async getChildren(): Promise<Child[]> {
++    const rows = this.db.query("SELECT * FROM children").all() as ChildRow[];
++    return rows.map(rowToChild);
++  }
++
++  async getChild(childId: string): Promise<Child | null> {
++    const row = this.db
++      .query("SELECT * FROM children WHERE id = ?")
++      .get(childId) as ChildRow | null;
++    return row ? rowToChild(row) : null;
++  }
++
++  async getActivities(
++    childId: string,
++    date?: string,
++    type?: ActivityType,
++  ): Promise<Activity[]> {
++    const conditions = ["child_id = ?"];
++    const params: string[] = [childId];
++
++    if (date) {
++      conditions.push("date(timestamp) = ?");
++      params.push(date);
++    }
++    if (type) {
++      conditions.push("type = ?");
++      params.push(type);
++    }
++
++    const sql = `SELECT * FROM activities WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC`;
++    const rows = this.db.query(sql).all(...params) as ActivityRow[];
++    return rows.map(rowToActivity);
++  }
++
++  async getLatestActivity(
++    childId: string,
++    type: ActivityType,
++  ): Promise<Activity | null> {
++    const row = this.db
++      .query(
++        "SELECT * FROM activities WHERE child_id = ? AND type = ? ORDER BY timestamp DESC LIMIT 1",
++      )
++      .get(childId, type) as ActivityRow | null;
++    return row ? rowToActivity(row) : null;
++  }
++
++  async getDailySummary(
++    childId: string,
++    date: string,
++  ): Promise<DailySummary> {
++    const activities = await this.getActivities(childId, date);
++
++    // Sort chronologically for the summary
++    const sorted = [...activities].sort(
++      (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
++    );
++
++    const checkInActivity = sorted.find((a) => a.type === "CHECK_IN");
++    const checkOutActivity = sorted.find((a) => a.type === "CHECK_OUT");
++    const diapers = sorted.filter((a) => a.type === "DIAPER");
++    const naps = sorted.filter((a) => a.type === "NAP");
++    const meals = sorted.filter((a) => a.type === "MEAL");
++    const notes = sorted
++      .filter((a) => a.notes)
++      .map((a) => a.notes as string);
++
++    return {
++      childId,
++      date,
++      checkIn: checkInActivity?.timestamp,
++      checkOut: checkOutActivity?.timestamp,
++      activities: sorted,
++      diaperCount: diapers.length,
++      naps,
++      meals,
++      notes,
++    };
++  }
++
++  async getActivitiesInRange(
++    childId: string,
++    startDate: string,
++    endDate: string,
++    type?: ActivityType,
++  ): Promise<Activity[]> {
++    const conditions = [
++      "child_id = ?",
++      "date(timestamp) >= ?",
++      "date(timestamp) <= ?",
++    ];
++    const params: string[] = [childId, startDate, endDate];
++
++    if (type) {
++      conditions.push("type = ?");
++      params.push(type);
++    }
++
++    const sql = `SELECT * FROM activities WHERE ${conditions.join(" AND ")} ORDER BY timestamp DESC`;
++    const rows = this.db.query(sql).all(...params) as ActivityRow[];
++    return rows.map(rowToActivity);
++  }
++
++  async upsertChild(child: Child): Promise<void> {
++    this.db
++      .query(
++        `INSERT INTO children (id, first_name, last_name, classroom, date_of_birth)
++         VALUES (?, ?, ?, ?, ?)
++         ON CONFLICT(id) DO UPDATE SET
++           first_name = excluded.first_name,
++           last_name = excluded.last_name,
++           classroom = excluded.classroom,
++           date_of_birth = excluded.date_of_birth`,
++      )
++      .run(
++        child.id,
++        child.firstName,
++        child.lastName,
++        child.classroom,
++        child.dateOfBirth,
++      );
++  }
++
++  async addActivity(activity: Activity): Promise<void> {
++    this.db
++      .query(
++        `INSERT INTO activities (id, child_id, type, timestamp, end_time, details, notes, reported_by)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++      )
++      .run(
++        activity.id,
++        activity.childId,
++        activity.type,
++        activity.timestamp,
++        activity.endTime ?? null,
++        JSON.stringify(activity.details),
++        activity.notes ?? null,
++        activity.reportedBy ?? null,
++      );
++  }
++
++  async addActivities(activities: Activity[]): Promise<void> {
++    const insert = this.db.prepare(
++      `INSERT INTO activities (id, child_id, type, timestamp, end_time, details, notes, reported_by)
++       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++    );
++
++    const insertMany = this.db.transaction((items: Activity[]) => {
++      for (const a of items) {
++        insert.run(
++          a.id,
++          a.childId,
++          a.type,
++          a.timestamp,
++          a.endTime ?? null,
++          JSON.stringify(a.details),
++          a.notes ?? null,
++          a.reportedBy ?? null,
++        );
++      }
++    });
++
++    insertMany(activities);
++  }
++
++  close(): void {
++    this.db.close();
++  }
++}
+diff --git a/src/provider/sqlite.unit.test.ts b/src/provider/sqlite.unit.test.ts
+new file mode 100644
+index 0000000..2fbf65e
+--- /dev/null
++++ b/src/provider/sqlite.unit.test.ts
+@@ -0,0 +1,272 @@
++import { describe, test, expect, beforeEach, afterEach } from "bun:test";
++import { SqliteDataProvider } from "./sqlite.js";
++import { createTestProvider } from "../test/helpers/test-db.js";
++import {
++  CHILD_EMMA,
++  CHILD_LIAM,
++  emmaFullDay,
++  liamPartialDay,
++} from "../test/fixtures/sample-data.js";
++import { ActivityType } from "../types.js";
++import type { Activity, Child } from "../types.js";
++
++describe("SqliteDataProvider", () => {
++  let provider: SqliteDataProvider;
++
++  afterEach(() => {
++    provider?.close();
++  });
++
++  describe("children", () => {
++    test("getChildren returns empty array when no children exist", async () => {
++      provider = createTestProvider();
++      const children = await provider.getChildren();
++      expect(children).toEqual([]);
++    });
++
++    test("upsertChild inserts and retrieves a child", async () => {
++      provider = createTestProvider();
++      await provider.upsertChild(CHILD_EMMA);
++
++      const children = await provider.getChildren();
++      expect(children).toHaveLength(1);
++      expect(children[0]).toEqual(CHILD_EMMA);
++    });
++
++    test("upsertChild updates existing child", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const updated: Child = { ...CHILD_EMMA, classroom: "Sunflowers" };
++      await provider.upsertChild(updated);
++
++      const child = await provider.getChild(CHILD_EMMA.id);
++      expect(child?.classroom).toBe("Sunflowers");
++    });
++
++    test("getChild returns null for unknown id", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const child = await provider.getChild("nonexistent");
++      expect(child).toBeNull();
++    });
++
++    test("getChildren returns multiple children", async () => {
++      provider = createTestProvider([CHILD_EMMA, CHILD_LIAM]);
++      const children = await provider.getChildren();
++      expect(children).toHaveLength(2);
++    });
++  });
++
++  describe("activities", () => {
++    beforeEach(() => {
++      provider = createTestProvider(
++        [CHILD_EMMA, CHILD_LIAM],
++        [...emmaFullDay(), ...liamPartialDay()],
++      );
++    });
++
++    test("getActivities returns all activities for a child", async () => {
++      const activities = await provider.getActivities(CHILD_EMMA.id);
++      expect(activities).toHaveLength(10);
++    });
++
++    test("getActivities filters by date", async () => {
++      const activities = await provider.getActivities(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++      expect(activities).toHaveLength(10);
++
++      const empty = await provider.getActivities(
++        CHILD_EMMA.id,
++        "2025-01-16",
++      );
++      expect(empty).toHaveLength(0);
++    });
++
++    test("getActivities filters by type", async () => {
++      const diapers = await provider.getActivities(
++        CHILD_EMMA.id,
++        undefined,
++        ActivityType.DIAPER,
++      );
++      expect(diapers).toHaveLength(3);
++      for (const d of diapers) {
++        expect(d.type).toBe(ActivityType.DIAPER);
++      }
++    });
++
++    test("getActivities filters by date and type", async () => {
++      const meals = await provider.getActivities(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        ActivityType.MEAL,
++      );
++      expect(meals).toHaveLength(3);
++    });
++
++    test("getActivities returns results ordered by timestamp desc", async () => {
++      const activities = await provider.getActivities(CHILD_EMMA.id);
++      for (let i = 1; i < activities.length; i++) {
++        expect(activities[i - 1].timestamp >= activities[i].timestamp).toBe(
++          true,
++        );
++      }
++    });
++
++    test("getActivities isolates children", async () => {
++      const emmaActivities = await provider.getActivities(CHILD_EMMA.id);
++      const liamActivities = await provider.getActivities(CHILD_LIAM.id);
++      expect(emmaActivities).toHaveLength(10);
++      expect(liamActivities).toHaveLength(3);
++    });
++  });
++
++  describe("getLatestActivity", () => {
++    beforeEach(() => {
++      provider = createTestProvider([CHILD_EMMA], emmaFullDay());
++    });
++
++    test("returns most recent activity of given type", async () => {
++      const latest = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.DIAPER,
++      );
++      expect(latest).not.toBeNull();
++      expect(latest!.timestamp).toBe("2025-01-15T13:30:00");
++      expect(latest!.details).toEqual({ condition: "wet" });
++    });
++
++    test("returns null when no matching activity exists", async () => {
++      const latest = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.INCIDENT,
++      );
++      expect(latest).toBeNull();
++    });
++
++    test("returns latest meal", async () => {
++      const latest = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.MEAL,
++      );
++      expect(latest).not.toBeNull();
++      expect(latest!.timestamp).toBe("2025-01-15T15:00:00");
++      expect((latest!.details as any).mealType).toBe("snack");
++    });
++  });
++
++  describe("getActivitiesInRange", () => {
++    test("returns activities within date range", async () => {
++      const day1 = emmaFullDay("2025-01-15");
++      const day2 = emmaFullDay("2025-01-16");
++      provider = createTestProvider([CHILD_EMMA], [...day1, ...day2]);
++
++      const activities = await provider.getActivitiesInRange(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        "2025-01-16",
++      );
++      expect(activities).toHaveLength(20);
++    });
++
++    test("filters by type within range", async () => {
++      const day1 = emmaFullDay("2025-01-15");
++      const day2 = emmaFullDay("2025-01-16");
++      provider = createTestProvider([CHILD_EMMA], [...day1, ...day2]);
++
++      const diapers = await provider.getActivitiesInRange(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        "2025-01-16",
++        ActivityType.DIAPER,
++      );
++      expect(diapers).toHaveLength(6); // 3 per day
++    });
++
++    test("returns empty for range with no data", async () => {
++      provider = createTestProvider([CHILD_EMMA], emmaFullDay("2025-01-15"));
++      const activities = await provider.getActivitiesInRange(
++        CHILD_EMMA.id,
++        "2025-02-01",
++        "2025-02-28",
++      );
++      expect(activities).toHaveLength(0);
++    });
++  });
++
++  describe("addActivities batch", () => {
++    test("inserts multiple activities atomically", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const activities = emmaFullDay();
++      await provider.addActivities(activities);
++
++      const stored = await provider.getActivities(CHILD_EMMA.id);
++      expect(stored).toHaveLength(activities.length);
++    });
++  });
++
++  describe("activity details roundtrip", () => {
++    test("preserves diaper details through JSON serialization", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const activity: Activity = {
++        id: "diaper-test",
++        childId: CHILD_EMMA.id,
++        type: ActivityType.DIAPER,
++        timestamp: "2025-01-15T09:00:00",
++        details: { condition: "wet+bm" },
++      };
++      await provider.addActivity(activity);
++
++      const retrieved = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.DIAPER,
++      );
++      expect(retrieved!.details).toEqual({ condition: "wet+bm" });
++    });
++
++    test("preserves meal details through JSON serialization", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const activity: Activity = {
++        id: "meal-test",
++        childId: CHILD_EMMA.id,
++        type: ActivityType.MEAL,
++        timestamp: "2025-01-15T12:00:00",
++        details: {
++          mealType: "lunch",
++          items: ["pasta", "broccoli", "milk"],
++          amount: "most",
++        },
++      };
++      await provider.addActivity(activity);
++
++      const retrieved = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.MEAL,
++      );
++      expect((retrieved!.details as any).items).toEqual([
++        "pasta",
++        "broccoli",
++        "milk",
++      ]);
++    });
++
++    test("preserves nap details with endTime", async () => {
++      provider = createTestProvider([CHILD_EMMA]);
++      const activity: Activity = {
++        id: "nap-test",
++        childId: CHILD_EMMA.id,
++        type: ActivityType.NAP,
++        timestamp: "2025-01-15T10:00:00",
++        endTime: "2025-01-15T11:30:00",
++        details: { duration: 90 },
++      };
++      await provider.addActivity(activity);
++
++      const retrieved = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.NAP,
++      );
++      expect(retrieved!.endTime).toBe("2025-01-15T11:30:00");
++      expect((retrieved!.details as any).duration).toBe(90);
++    });
++  });
++});
+diff --git a/src/test/daily-reports.integration.test.ts b/src/test/daily-reports.integration.test.ts
+new file mode 100644
+index 0000000..a0d10e6
+--- /dev/null
++++ b/src/test/daily-reports.integration.test.ts
+@@ -0,0 +1,254 @@
++import { describe, test, expect, beforeEach, afterEach } from "bun:test";
++import { createTestProvider } from "./helpers/test-db.js";
++import {
++  CHILD_EMMA,
++  CHILD_LIAM,
++  emmaFullDay,
++  liamPartialDay,
++} from "./fixtures/sample-data.js";
++import { ActivityType } from "../types.js";
++import type { SqliteDataProvider } from "../provider/sqlite.js";
++import type { DataProvider } from "../provider/interface.js";
++
++/**
++ * Integration tests that exercise the full daily-report retrieval flow
++ * through the DataProvider interface. These tests verify that data can be
++ * ingested, stored in SQLite, and queried back as coherent daily summaries.
++ *
++ * The provider variable is typed as DataProvider to ensure we only use
++ * the abstract interface — any backing implementation should pass these.
++ */
++describe("Daily report retrieval (integration)", () => {
++  let provider: DataProvider & { close(): void };
++
++  beforeEach(() => {
++    provider = createTestProvider(
++      [CHILD_EMMA, CHILD_LIAM],
++      [...emmaFullDay(), ...liamPartialDay()],
++    );
++  });
++
++  afterEach(() => {
++    provider.close();
++  });
++
++  describe("getDailySummary", () => {
++    test("returns a complete daily summary for a child", async () => {
++      const summary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++
++      expect(summary.childId).toBe(CHILD_EMMA.id);
++      expect(summary.date).toBe("2025-01-15");
++      expect(summary.checkIn).toBe("2025-01-15T08:05:00");
++      expect(summary.checkOut).toBe("2025-01-15T17:15:00");
++      expect(summary.diaperCount).toBe(3);
++      expect(summary.naps).toHaveLength(1);
++      expect(summary.meals).toHaveLength(3);
++      expect(summary.activities).toHaveLength(10);
++    });
++
++    test("summary activities are in chronological order", async () => {
++      const summary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++
++      for (let i = 1; i < summary.activities.length; i++) {
++        const prev = new Date(summary.activities[i - 1].timestamp).getTime();
++        const curr = new Date(summary.activities[i].timestamp).getTime();
++        expect(prev).toBeLessThanOrEqual(curr);
++      }
++    });
++
++    test("summary collects notes from all activities", async () => {
++      const summary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++
++      expect(summary.notes.length).toBeGreaterThan(0);
++      expect(
++        summary.notes.some((n) => n.includes("blocks")),
++      ).toBe(true);
++    });
++
++    test("summary for a day with no data returns empty collections", async () => {
++      const summary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-02-01",
++      );
++
++      expect(summary.activities).toHaveLength(0);
++      expect(summary.diaperCount).toBe(0);
++      expect(summary.naps).toHaveLength(0);
++      expect(summary.meals).toHaveLength(0);
++      expect(summary.checkIn).toBeUndefined();
++      expect(summary.checkOut).toBeUndefined();
++    });
++
++    test("summary correctly isolates data between children", async () => {
++      const emmaSummary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++      const liamSummary = await provider.getDailySummary(
++        CHILD_LIAM.id,
++        "2025-01-15",
++      );
++
++      expect(emmaSummary.activities).toHaveLength(10);
++      expect(liamSummary.activities).toHaveLength(3);
++      expect(emmaSummary.diaperCount).toBe(3);
++      expect(liamSummary.diaperCount).toBe(1);
++    });
++  });
++
++  describe("common parent queries via DataProvider interface", () => {
++    test("when did my child's diaper last get changed?", async () => {
++      const latest = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.DIAPER,
++      );
++
++      expect(latest).not.toBeNull();
++      expect(latest!.type).toBe(ActivityType.DIAPER);
++      expect(latest!.timestamp).toBe("2025-01-15T13:30:00");
++    });
++
++    test("when did they last eat?", async () => {
++      const latest = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.MEAL,
++      );
++
++      expect(latest).not.toBeNull();
++      expect(latest!.type).toBe(ActivityType.MEAL);
++      expect(latest!.timestamp).toBe("2025-01-15T15:00:00");
++    });
++
++    test("how many diapers today?", async () => {
++      const diapers = await provider.getActivities(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        ActivityType.DIAPER,
++      );
++
++      expect(diapers).toHaveLength(3);
++    });
++
++    test("what time did they check in?", async () => {
++      const checkIn = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.CHECK_IN,
++      );
++
++      expect(checkIn).not.toBeNull();
++      expect(checkIn!.timestamp).toBe("2025-01-15T08:05:00");
++    });
++
++    test("how long was their nap?", async () => {
++      const nap = await provider.getLatestActivity(
++        CHILD_EMMA.id,
++        ActivityType.NAP,
++      );
++
++      expect(nap).not.toBeNull();
++      expect((nap!.details as any).duration).toBe(75);
++      expect(nap!.endTime).toBe("2025-01-15T11:15:00");
++    });
++
++    test("what did they eat for lunch?", async () => {
++      const meals = await provider.getActivities(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        ActivityType.MEAL,
++      );
++      const lunch = meals.find((m) => (m.details as any).mealType === "lunch");
++
++      expect(lunch).toBeDefined();
++      expect((lunch!.details as any).items).toEqual([
++        "chicken",
++        "rice",
++        "peas",
++      ]);
++      expect((lunch!.details as any).amount).toBe("most");
++    });
++  });
++
++  describe("multi-day data retrieval", () => {
++    test("getActivitiesInRange spans multiple days", async () => {
++      // Add a second day of data
++      const day2 = emmaFullDay("2025-01-16");
++      for (const activity of day2) {
++        await provider.addActivity(activity);
++      }
++
++      const allActivities = await provider.getActivitiesInRange(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        "2025-01-16",
++      );
++      expect(allActivities).toHaveLength(20);
++
++      const diapersOnly = await provider.getActivitiesInRange(
++        CHILD_EMMA.id,
++        "2025-01-15",
++        "2025-01-16",
++        ActivityType.DIAPER,
++      );
++      expect(diapersOnly).toHaveLength(6);
++    });
++
++    test("daily summaries are independent per day", async () => {
++      const day2 = emmaFullDay("2025-01-16");
++      for (const activity of day2) {
++        await provider.addActivity(activity);
++      }
++
++      const summary1 = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++      const summary2 = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-16",
++      );
++
++      expect(summary1.activities).toHaveLength(10);
++      expect(summary2.activities).toHaveLength(10);
++      // Each day has its own check-in time
++      expect(summary1.checkIn).toContain("2025-01-15");
++      expect(summary2.checkIn).toContain("2025-01-16");
++    });
++  });
++
++  describe("data ingestion flow", () => {
++    test("ingest children then activities, query back summaries", async () => {
++      // Start fresh
++      provider.close();
++      provider = createTestProvider();
++
++      // Step 1: Register children (simulates initial setup)
++      await provider.upsertChild(CHILD_EMMA);
++      await provider.upsertChild(CHILD_LIAM);
++
++      const children = await provider.getChildren();
++      expect(children).toHaveLength(2);
++
++      // Step 2: Ingest a day's activities (simulates parsing a daily report)
++      await provider.addActivities(emmaFullDay());
++      await provider.addActivities(liamPartialDay());
++
++      // Step 3: Query back — this is the path the procare-query skill takes
++      const summary = await provider.getDailySummary(
++        CHILD_EMMA.id,
++        "2025-01-15",
++      );
++      expect(summary.diaperCount).toBe(3);
++      expect(summary.meals).toHaveLength(3);
++      expect(summary.naps).toHaveLength(1);
++    });
++  });
++});
+diff --git a/src/test/fixtures/sample-data.ts b/src/test/fixtures/sample-data.ts
+new file mode 100644
+index 0000000..1909581
+--- /dev/null
++++ b/src/test/fixtures/sample-data.ts
+@@ -0,0 +1,154 @@
++import { ActivityType } from "../../types.js";
++import type { Activity, Child } from "../../types.js";
++
++export const CHILD_EMMA: Child = {
++  id: "child-001",
++  firstName: "Emma",
++  lastName: "Smith",
++  classroom: "Butterflies",
++  dateOfBirth: "2023-03-15",
++};
++
++export const CHILD_LIAM: Child = {
++  id: "child-002",
++  firstName: "Liam",
++  lastName: "Johnson",
++  classroom: "Ladybugs",
++  dateOfBirth: "2022-11-02",
++};
++
++/** A full realistic day for Emma on 2025-01-15. */
++export function emmaFullDay(date = "2025-01-15"): Activity[] {
++  return [
++    {
++      id: `act-${date}-001`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.CHECK_IN,
++      timestamp: `${date}T08:05:00`,
++      details: {},
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-002`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.MEAL,
++      timestamp: `${date}T08:30:00`,
++      details: {
++        mealType: "breakfast",
++        items: ["oatmeal", "banana slices", "milk"],
++        amount: "all",
++      },
++      notes: "Great appetite this morning!",
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-003`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.DIAPER,
++      timestamp: `${date}T09:15:00`,
++      details: { condition: "wet" },
++      reportedBy: "Ms. Garcia",
++    },
++    {
++      id: `act-${date}-004`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.NAP,
++      timestamp: `${date}T10:00:00`,
++      endTime: `${date}T11:15:00`,
++      details: { duration: 75 },
++      notes: "Fell asleep quickly",
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-005`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.DIAPER,
++      timestamp: `${date}T11:20:00`,
++      details: { condition: "wet+bm" },
++      reportedBy: "Ms. Garcia",
++    },
++    {
++      id: `act-${date}-006`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.MEAL,
++      timestamp: `${date}T11:45:00`,
++      details: {
++        mealType: "lunch",
++        items: ["chicken", "rice", "peas"],
++        amount: "most",
++      },
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-007`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.DIAPER,
++      timestamp: `${date}T13:30:00`,
++      details: { condition: "wet" },
++      reportedBy: "Ms. Garcia",
++    },
++    {
++      id: `act-${date}-008`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.MEAL,
++      timestamp: `${date}T15:00:00`,
++      details: {
++        mealType: "snack",
++        items: ["crackers", "apple slices"],
++        amount: "some",
++      },
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-009`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.NOTE,
++      timestamp: `${date}T15:30:00`,
++      details: {},
++      notes: "Emma loved playing with blocks today and built a tall tower!",
++      reportedBy: "Ms. Johnson",
++    },
++    {
++      id: `act-${date}-010`,
++      childId: CHILD_EMMA.id,
++      type: ActivityType.CHECK_OUT,
++      timestamp: `${date}T17:15:00`,
++      details: {},
++      reportedBy: "Ms. Johnson",
++    },
++  ];
++}
++
++/** A partial day for Liam — useful for testing multi-child scenarios. */
++export function liamPartialDay(date = "2025-01-15"): Activity[] {
++  return [
++    {
++      id: `act-liam-${date}-001`,
++      childId: CHILD_LIAM.id,
++      type: ActivityType.CHECK_IN,
++      timestamp: `${date}T07:45:00`,
++      details: {},
++      reportedBy: "Mr. Davis",
++    },
++    {
++      id: `act-liam-${date}-002`,
++      childId: CHILD_LIAM.id,
++      type: ActivityType.MEAL,
++      timestamp: `${date}T08:15:00`,
++      details: {
++        mealType: "breakfast",
++        items: ["pancakes", "strawberries"],
++        amount: "all",
++      },
++      reportedBy: "Mr. Davis",
++    },
++    {
++      id: `act-liam-${date}-003`,
++      childId: CHILD_LIAM.id,
++      type: ActivityType.DIAPER,
++      timestamp: `${date}T09:00:00`,
++      details: { condition: "bm" },
++      reportedBy: "Mr. Davis",
++    },
++  ];
++}
+diff --git a/src/test/helpers/test-db.ts b/src/test/helpers/test-db.ts
+new file mode 100644
+index 0000000..5aaaeb1
+--- /dev/null
++++ b/src/test/helpers/test-db.ts
+@@ -0,0 +1,25 @@
++import { openDatabase } from "../../db/connection.js";
++import { SqliteDataProvider } from "../../provider/sqlite.js";
++import type { Activity, Child } from "../../types.js";
++
++/**
++ * Creates an in-memory SqliteDataProvider pre-loaded with test data.
++ * Caller is responsible for calling .close() when done.
++ */
++export function createTestProvider(
++  children: Child[] = [],
++  activities: Activity[] = [],
++): SqliteDataProvider {
++  const db = openDatabase({ path: ":memory:" });
++  const provider = new SqliteDataProvider(db);
++
++  // Seed synchronously — the async methods are thin wrappers
++  for (const child of children) {
++    provider.upsertChild(child);
++  }
++  if (activities.length > 0) {
++    provider.addActivities(activities);
++  }
++
++  return provider;
++}
+diff --git a/src/types.ts b/src/types.ts
+new file mode 100644
+index 0000000..fca8156
+--- /dev/null
++++ b/src/types.ts
+@@ -0,0 +1,76 @@
++export interface Child {
++  id: string;
++  firstName: string;
++  lastName: string;
++  classroom: string;
++  dateOfBirth: string; // ISO date string YYYY-MM-DD
++}
++
++export enum ActivityType {
++  DIAPER = "DIAPER",
++  MEAL = "MEAL",
++  NAP = "NAP",
++  CHECK_IN = "CHECK_IN",
++  CHECK_OUT = "CHECK_OUT",
++  INCIDENT = "INCIDENT",
++  MEDICATION = "MEDICATION",
++  PHOTO = "PHOTO",
++  NOTE = "NOTE",
++  LEARNING = "LEARNING",
++}
++
++export interface DiaperDetails {
++  condition: "wet" | "dry" | "bm" | "wet+bm";
++}
++
++export interface MealDetails {
++  mealType: "breakfast" | "lunch" | "snack" | "dinner";
++  items: string[];
++  amount?: "all" | "most" | "some" | "none";
++}
++
++export interface NapDetails {
++  duration?: number; // minutes
++}
++
++export interface IncidentDetails {
++  description: string;
++  action: string;
++}
++
++export interface MedicationDetails {
++  name: string;
++  dosage: string;
++  time: string;
++}
++
++export type ActivityDetails =
++  | DiaperDetails
++  | MealDetails
++  | NapDetails
++  | IncidentDetails
++  | MedicationDetails
++  | Record<string, unknown>;
++
++export interface Activity {
++  id: string;
++  childId: string;
++  type: ActivityType;
++  timestamp: string; // ISO datetime string
++  endTime?: string; // ISO datetime string
++  details: ActivityDetails;
++  notes?: string;
++  reportedBy?: string;
++}
++
++export interface DailySummary {
++  childId: string;
++  date: string; // ISO date string YYYY-MM-DD
++  checkIn?: string; // ISO datetime
++  checkOut?: string; // ISO datetime
++  activities: Activity[];
++  diaperCount: number;
++  naps: Activity[];
++  meals: Activity[];
++  notes: string[];
++}
+diff --git a/tsconfig.json b/tsconfig.json
+new file mode 100644
+index 0000000..f089e52
+--- /dev/null
++++ b/tsconfig.json
+@@ -0,0 +1,20 @@
++{
++  "compilerOptions": {
++    "target": "ES2022",
++    "module": "Node16",
++    "moduleResolution": "Node16",
++    "lib": ["ES2022"],
++    "outDir": "./dist",
++    "rootDir": "./src",
++    "strict": true,
++    "esModuleInterop": true,
++    "skipLibCheck": true,
++    "forceConsistentCasingInFileNames": true,
++    "resolveJsonModule": true,
++    "declaration": true,
++    "declarationMap": true,
++    "sourceMap": true
++  },
++  "include": ["src/**/*"],
++  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
++}
