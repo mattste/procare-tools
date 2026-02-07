@@ -1,0 +1,94 @@
+# Procare Tools
+
+A plugin for querying childcare activity data from Procare.
+
+## Project structure
+
+```
+procare-tools/
+├── .agents/
+│   └── skills/
+│       ├── test/SKILL.md                    # Testing guidance (bun:test)
+│       ├── typecheck/SKILL.md               # TypeScript strict-mode checking
+│       ├── implement-provider/SKILL.md      # Guide for adding DataProvider implementations
+│       └── code-review/SKILL.md             # Code review checklist
+├── .claude-plugin/
+│   └── plugin.json                          # Claude Code plugin manifest
+├── src/
+│   ├── index.ts                             # Public API re-exports
+│   ├── types.ts                             # TypeScript types (Child, Activity, etc.)
+│   ├── db/
+│   │   ├── connection.ts                    # SQLite connection factory
+│   │   └── schema.ts                        # Schema migrations
+│   ├── provider/
+│   │   ├── interface.ts                     # Abstract DataProvider interface
+│   │   ├── sqlite.ts                        # SQLite-backed implementation
+│   │   ├── index.ts                         # Re-exports
+│   │   └── sqlite.unit.test.ts              # Unit tests
+│   └── test/
+│       ├── fixtures/
+│       │   └── sample-data.ts               # Realistic test data (Emma, Liam)
+│       ├── helpers/
+│       │   └── test-db.ts                   # In-memory test DB factory
+│       └── daily-reports.integration.test.ts # Integration tests
+├── skills/
+│   ├── procare-query/
+│   │   └── SKILL.md                         # Main query skill
+│   └── procare-data-provider/
+│       └── SKILL.md                         # Data access layer skill
+├── agents/
+│   └── procare-assistant.md                 # Subagent for childcare queries
+├── docs/
+│   └── data-model.md                        # Data model reference
+├── AGENTS.md                                # This file (vendor-neutral)
+└── CLAUDE.md -> AGENTS.md                   # Claude-specific symlink
+```
+
+## Development
+
+**Runtime**: [Bun](https://bun.sh/) — uses built-in `bun:sqlite` and `bun:test` (zero external runtime dependencies).
+
+```bash
+bun install          # Install dependencies
+bun test             # Run all tests
+bun test --filter unit         # Unit tests only
+bun test --filter integration  # Integration tests only
+bun run typecheck    # TypeScript type checking
+bun run build        # Build to dist/
+```
+
+## Architecture
+
+- **`DataProvider` interface** (`src/provider/interface.ts`): Abstract contract for data access. Any backing store (SQLite, API, email parser) implements this.
+- **`SqliteDataProvider`** (`src/provider/sqlite.ts`): SQLite-backed implementation using `bun:sqlite`. Stores children and activities with JSON-serialized details.
+- **Schema management** (`src/db/schema.ts`): Versioned migrations applied automatically on connection open.
+- **Test harness** (`src/test/`): In-memory SQLite via `createTestProvider()`, realistic fixtures for two children with full-day activity data.
+
+## Key design decisions
+
+- **Bun runtime**: Uses `bun:sqlite` (built-in) and `bun:test` — no external dependencies for SQLite or testing
+- **Plugin, not standalone**: Built as a plugin so it can be shared and installed across projects
+- **Skill-based architecture**: `procare-query` handles user questions, `procare-data-provider` abstracts the data source
+- **Agent delegation**: The `procare-assistant` agent is a lightweight agent that handles the full query flow
+- **Data source agnostic**: The `DataProvider` interface is independent of the backing store — swap SQLite for an API client without changing query logic
+
+## Conventions
+
+- **TypeScript strict mode** — `tsconfig.json` enables `strict: true`. All code must pass `tsc --noEmit`.
+- **Test files** live next to source (`*.unit.test.ts`) or in `src/test/` for integration tests.
+- **Test naming**: Use descriptive `describe`/`test` blocks. Unit test files are suffixed `.unit.test.ts`, integration tests `.integration.test.ts`.
+- **ISO strings for dates/times**: All timestamps are ISO 8601 strings, not `Date` objects.
+- **JSON details column**: Activity details are stored as JSON in SQLite; type-specific interfaces (`DiaperDetails`, `MealDetails`, etc.) provide type safety at the application layer.
+- **No external runtime dependencies**: Rely on Bun built-ins. Dev dependencies (TypeScript, `@types/bun`) are fine.
+
+## Current status
+
+**SQLite data layer implemented with full test coverage. Not yet connected to live Procare data.**
+
+## Next steps
+
+1. Investigate Procare API availability (parent-facing endpoints, auth)
+2. Get a sample Procare daily report email and analyze the format
+3. Implement an ingestion pipeline (API poller or email parser) that writes to SQLite via the DataProvider
+4. Wire the procare-query skill to call the DataProvider at query time
+5. Test end-to-end with real data
