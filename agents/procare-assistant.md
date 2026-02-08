@@ -44,7 +44,7 @@ She's having a good day!"
 
 ## Current status
 
-The data provider is not yet implemented. When asked a question, explain what data you would retrieve and how you would answer it. Let the parent know the plugin is being developed and will connect to real Procare data soon.
+The data provider is implemented via a SQLite cache populated by the Procare sync engine. When data is missing or stale, recommend running `bun run sync` to fetch the latest activities before answering.
 
 ## Data model
 

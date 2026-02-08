@@ -204,6 +204,51 @@ describe("SqliteDataProvider", () => {
     });
   });
 
+  describe("sync metadata", () => {
+    test("stores and retrieves sync metadata values", async () => {
+      provider = createTestProvider();
+
+      await provider.setSyncMetadata("last_sync_kid-1", "2026-02-07");
+      const value = await provider.getSyncMetadata("last_sync_kid-1");
+
+      expect(value).toBe("2026-02-07");
+    });
+  });
+
+  describe("idempotent activity upsert", () => {
+    test("upserts duplicate activity ids instead of inserting duplicates", async () => {
+      provider = createTestProvider([CHILD_EMMA]);
+
+      await provider.addActivity({
+        id: "same-id",
+        childId: CHILD_EMMA.id,
+        type: ActivityType.NOTE,
+        timestamp: "2025-01-15T09:00:00",
+        details: {},
+        notes: "first",
+      });
+
+      await provider.addActivity({
+        id: "same-id",
+        childId: CHILD_EMMA.id,
+        type: ActivityType.NOTE,
+        timestamp: "2025-01-15T09:05:00",
+        details: {},
+        notes: "updated",
+      });
+
+      const notes = await provider.getActivities(
+        CHILD_EMMA.id,
+        "2025-01-15",
+        ActivityType.NOTE,
+      );
+
+      expect(notes).toHaveLength(1);
+      expect(notes[0].notes).toBe("updated");
+      expect(notes[0].timestamp).toBe("2025-01-15T09:05:00");
+    });
+  });
+
   describe("activity details roundtrip", () => {
     test("preserves diaper details through JSON serialization", async () => {
       provider = createTestProvider([CHILD_EMMA]);

@@ -38,6 +38,6 @@ For the full data model and available query interfaces, see [data-model.md](../.
 
 ## Current status
 
-**Data source: NOT YET CONNECTED**
+**Data source: CONNECTED VIA SYNCED SQLITE CACHE**
 
-This plugin is scaffolded but not yet connected to a live data source. When a user asks a query, inform them that the data provider is not yet implemented and explain what information you *would* return once connected. Mention that the plan is to connect via the Procare API or by parsing Procare email reports.
+Query responses should come from the SQLite `DataProvider`, which is populated by the Procare sync pipeline (`src/sync/cli.ts` + `src/sync/engine.ts`). If data appears stale, ask when sync was last run and suggest running `bun run sync`.

@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const MIGRATIONS: string[] = [
   // v1: initial schema
@@ -32,6 +32,13 @@ const MIGRATIONS: string[] = [
 
   CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY
+  );
+  `,
+  // v2: sync metadata table for incremental sync state
+  `
+  CREATE TABLE IF NOT EXISTS sync_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
   );
   `,
 ];
