@@ -179,7 +179,15 @@ export class SqliteDataProvider implements DataProvider {
     this.db
       .query(
         `INSERT INTO activities (id, child_id, type, timestamp, end_time, details, notes, reported_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           child_id = excluded.child_id,
+           type = excluded.type,
+           timestamp = excluded.timestamp,
+           end_time = excluded.end_time,
+           details = excluded.details,
+           notes = excluded.notes,
+           reported_by = excluded.reported_by`,
       )
       .run(
         activity.id,
@@ -196,7 +204,15 @@ export class SqliteDataProvider implements DataProvider {
   async addActivities(activities: Activity[]): Promise<void> {
     const insert = this.db.prepare(
       `INSERT INTO activities (id, child_id, type, timestamp, end_time, details, notes, reported_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+         child_id = excluded.child_id,
+         type = excluded.type,
+         timestamp = excluded.timestamp,
+         end_time = excluded.end_time,
+         details = excluded.details,
+         notes = excluded.notes,
+         reported_by = excluded.reported_by`,
     );
 
     const insertMany = this.db.transaction((items: Activity[]) => {
@@ -215,6 +231,23 @@ export class SqliteDataProvider implements DataProvider {
     });
 
     insertMany(activities);
+  }
+
+  async getSyncMetadata(key: string): Promise<string | null> {
+    const row = this.db
+      .query("SELECT value FROM sync_metadata WHERE key = ?")
+      .get(key) as { value: string } | null;
+    return row?.value ?? null;
+  }
+
+  async setSyncMetadata(key: string, value: string): Promise<void> {
+    this.db
+      .query(
+        `INSERT INTO sync_metadata (key, value)
+         VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+      )
+      .run(key, value);
   }
 
   close(): void {

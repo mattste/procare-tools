@@ -152,3 +152,33 @@ export function liamPartialDay(date = "2025-01-15"): Activity[] {
     },
   ];
 }
+
+export function emmaBottleActivity(date = "2025-01-15"): Activity {
+  return {
+    id: `act-${date}-bottle-001`,
+    childId: CHILD_EMMA.id,
+    type: ActivityType.BOTTLE,
+    timestamp: `${date}T14:15:00`,
+    details: {
+      amount: 4,
+      bottleConsumed: 3,
+    },
+    reportedBy: "Ms. Johnson",
+  };
+}
+
+export function emmaLearningActivity(date = "2025-01-15"): Activity {
+  return {
+    id: `act-${date}-learning-001`,
+    childId: CHILD_EMMA.id,
+    type: ActivityType.LEARNING,
+    timestamp: `${date}T10:30:00`,
+    details: {
+      activityName: "Circle Time",
+      categories: ["Language", "Social"],
+      photoUrl: "https://example.com/photos/circle-time.jpg",
+    },
+    notes: "Participated in songs and story time.",
+    reportedBy: "Ms. Garcia",
+  };
+}

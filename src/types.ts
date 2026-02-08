@@ -10,6 +10,7 @@ export enum ActivityType {
   DIAPER = "DIAPER",
   MEAL = "MEAL",
   NAP = "NAP",
+  BOTTLE = "BOTTLE",
   CHECK_IN = "CHECK_IN",
   CHECK_OUT = "CHECK_OUT",
   INCIDENT = "INCIDENT",
@@ -17,6 +18,7 @@ export enum ActivityType {
   PHOTO = "PHOTO",
   NOTE = "NOTE",
   LEARNING = "LEARNING",
+  MOOD = "MOOD",
 }
 
 export interface DiaperDetails {
@@ -31,6 +33,17 @@ export interface MealDetails {
 
 export interface NapDetails {
   duration?: number; // minutes
+}
+
+export interface BottleDetails {
+  amount: number;
+  bottleConsumed?: number;
+}
+
+export interface LearningDetails {
+  activityName: string;
+  categories: string[];
+  photoUrl?: string;
 }
 
 export interface IncidentDetails {
@@ -48,6 +61,8 @@ export type ActivityDetails =
   | DiaperDetails
   | MealDetails
   | NapDetails
+  | BottleDetails
+  | LearningDetails
   | IncidentDetails
   | MedicationDetails
   | Record<string, unknown>;

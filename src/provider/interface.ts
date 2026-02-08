@@ -52,6 +52,12 @@ export interface DataProvider {
   /** Add multiple activity records in a batch. */
   addActivities(activities: Activity[]): Promise<void>;
 
+  /** Read sync metadata by key. */
+  getSyncMetadata(key: string): Promise<string | null>;
+
+  /** Write sync metadata by key. */
+  setSyncMetadata(key: string, value: string): Promise<void>;
+
   /** Close the provider and release resources. */
   close(): void;
 }

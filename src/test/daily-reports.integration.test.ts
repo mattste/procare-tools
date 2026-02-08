@@ -3,7 +3,9 @@ import { createTestProvider } from "./helpers/test-db.js";
 import {
   CHILD_EMMA,
   CHILD_LIAM,
+  emmaBottleActivity,
   emmaFullDay,
+  emmaLearningActivity,
   liamPartialDay,
 } from "./fixtures/sample-data.js";
 import { ActivityType } from "../types.js";
@@ -249,6 +251,30 @@ describe("Daily report retrieval (integration)", () => {
       expect(summary.diaperCount).toBe(3);
       expect(summary.meals).toHaveLength(3);
       expect(summary.naps).toHaveLength(1);
+    });
+  });
+
+  describe("extended activity types", () => {
+    test("summary includes bottle and learning activities when present", async () => {
+      await provider.addActivity(emmaBottleActivity());
+      await provider.addActivity(emmaLearningActivity());
+
+      const summary = await provider.getDailySummary(
+        CHILD_EMMA.id,
+        "2025-01-15",
+      );
+
+      const bottle = summary.activities.find(
+        (a) => a.type === ActivityType.BOTTLE,
+      );
+      const learning = summary.activities.find(
+        (a) => a.type === ActivityType.LEARNING,
+      );
+
+      expect(bottle).toBeDefined();
+      expect((bottle!.details as any).amount).toBe(4);
+      expect(learning).toBeDefined();
+      expect((learning!.details as any).activityName).toBe("Circle Time");
     });
   });
 });

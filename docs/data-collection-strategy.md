@@ -16,6 +16,28 @@ Implement **Option 2: API Client + SQLite Cache** — a TypeScript API client th
 
 Login returns an `auth_token` (e.g., `online_auth_4JyQc34SKA72kFWemAJM628u`) in the user response. This token is sent on subsequent requests (likely via cookie or `Authorization` header — the exact mechanism needs to be confirmed by testing a raw `fetch` call with the token as a Bearer header or query param).
 
+### Token acquisition workflow
+
+Use the same auth endpoint the web client uses:
+
+`POST https://online-auth.procareconnect.com/sessions/`
+
+Request body:
+```json
+{
+  "email": "$PROCARE_AUTHENTICATION_EMAIL",
+  "password": "$PROCARE_AUTHENTICATION_PASSWORD",
+  "role": "carer",
+  "platform": "web"
+}
+```
+
+Implementation notes:
+- `src/api/auth.ts` performs this login and extracts `auth_token`.
+- `src/sync/cli.ts` prefers `PROCARE_AUTH_TOKEN`; if absent, it automatically logs in using `PROCARE_AUTHENTICATION_EMAIL` and `PROCARE_AUTHENTICATION_PASSWORD`.
+- The API client supports both `Authorization: Bearer <token>` and query-param auth mode (`auth_token`) via `PROCARE_API_AUTH_MODE=query`.
+- Request pacing defaults to 1500ms between requests (`PROCARE_MIN_REQUEST_INTERVAL_MS`) to reduce account risk.
+
 ### Endpoints
 
 | Method | Path | Purpose | Auth Required |
